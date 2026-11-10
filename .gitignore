@@ -1,0 +1,9 @@
+# Raw inputs and caches stay local: the community spreadsheet, logs, build output.
+# Exceptions that can't always be regenerated are committed encrypted (see .gitattributes).
+data/*
+!data/catalog.tsv
+!data/api/
+!data/captions/
+Weekly Workouts.dtable
+__pycache__/
+.DS_Store

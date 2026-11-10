@@ -1,0 +1,10 @@
+# Private files: plaintext locally, age-encrypted in commits (the `age` filter and diff
+# driver come from ~/.gitconfig; see github.com/deed02392/MacGeorgeface tree/bin/git-age-filter).
+# File names are public, so encrypted files must have names that reveal nothing.
+private/**       filter=age diff=age
+CLAUDE.local.md  filter=age diff=age
+data/catalog.tsv filter=age diff=age
+data/api/**      filter=age diff=age
+data/captions/** filter=age diff=age
+# Binary: keep it out of decrypted diffs.
+*.db             filter=age -diff
