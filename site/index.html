@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Yoga Search">
+<meta name="theme-color" content="#111">
+<meta name="robots" content="noindex, nofollow">
+<title>Fitness+ Yoga Search</title>
+<style>
+  :root {
+    --bg: #f5f5f7; --card: #fff; --fg: #1d1d1f; --muted: #6e6e73; --line: #d2d2d7;
+    --accent: #0a84ff; --chip: #ececf0; --hit: #ffe58a; --pose: #e3f1ff; --body: #e9f8e5; --mood: #f6e9ff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #000; --card: #1c1c1e; --fg: #f5f5f7; --muted: #98989d; --line: #38383a;
+      --chip: #2c2c2e; --hit: #6b5800; --pose: #0f2a44; --body: #16351a; --mood: #33183f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 16px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+         background: var(--bg); color: var(--fg); padding-bottom: env(safe-area-inset-bottom); }
+  header { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 88%, transparent);
+           backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+           padding: calc(env(safe-area-inset-top) + 10px) 12px 8px; border-bottom: 1px solid var(--line); }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  .searchrow { display: flex; gap: 8px; }
+  input[type=search] { flex: 1; font-size: 17px; padding: 10px 12px; border-radius: 12px;
+                       border: 1px solid var(--line); background: var(--card); color: var(--fg); }
+  button { font: inherit; border: 0; border-radius: 12px; padding: 8px 12px; background: var(--chip);
+           color: var(--fg); cursor: pointer; }
+  button.primary { background: var(--accent); color: #fff; }
+  .chips { display: flex; gap: 6px; overflow-x: auto; padding: 8px 0 2px; scrollbar-width: none; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chips button { white-space: nowrap; font-size: 14px; padding: 6px 11px; border-radius: 999px; }
+  .chips button.on { background: var(--accent); color: #fff; }
+  .filters { display: flex; gap: 6px; overflow-x: auto; padding-top: 6px; font-size: 14px; scrollbar-width: none; }
+  .filters::-webkit-scrollbar { display: none; }
+  select { font: inherit; font-size: 14px; padding: 5px 6px; flex: none; border-radius: 10px; border: 1px solid var(--line);
+           background: var(--card); color: var(--fg); }
+  .status { color: var(--muted); font-size: 13px; padding: 8px 12px 0; }
+  .parsed span { display: inline-block; background: var(--chip); border-radius: 6px; padding: 0 6px; margin: 2px 2px 0 0; }
+  main { padding: 8px 12px 40px; display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); }
+  .card { background: var(--card); border-radius: 16px; overflow: hidden; display: flex; flex-direction: column;
+          box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+  .card a.go { color: inherit; text-decoration: none; display: flex; gap: 10px; padding: 12px 12px 6px; }
+  .thumb { width: 104px; height: 58px; border-radius: 8px; object-fit: cover; background: var(--chip); flex: none; }
+  .t { font-weight: 600; }
+  .sub { color: var(--muted); font-size: 13px; }
+  .desc { padding: 0 12px; font-size: 14px; }
+  .tags { padding: 6px 12px 10px; display: flex; flex-wrap: wrap; gap: 4px; }
+  .tag { font-size: 12px; border-radius: 6px; padding: 1px 6px; background: var(--chip); }
+  .tag.pose { background: var(--pose); } .tag.body { background: var(--body); } .tag.mood { background: var(--mood); }
+  .tag.hit { outline: 2px solid var(--accent); }
+  .tag b { font-weight: 600; }
+  details { padding: 0 12px 10px; font-size: 13px; color: var(--muted); }
+  details summary { cursor: pointer; }
+  mark { background: var(--hit); color: inherit; border-radius: 3px; }
+  .more { grid-column: 1 / -1; text-align: center; }
+  .help { font-size: 13px; color: var(--muted); padding: 4px 0 0; }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="searchrow">
+      <input id="q" type="search" placeholder="e.g. hips hamstrings slow 20 min" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <button id="pick" class="primary" title="Pick one at random from the best matches">🎲</button>
+    </div>
+    <div class="chips" id="presets"></div>
+    <div class="filters">
+      <select id="dur"><option value="">Length</option><option>5</option><option>10</option><option>20</option><option>30</option><option>45</option><option>60</option></select>
+      <select id="trainer"><option value="">Trainer</option></select>
+      <select id="style"><option value="">Style</option><option>Slow</option><option>Energetic</option></select>
+      <select id="music"><option value="">Music</option></select>
+      <select id="sort"><option value="best">Best match</option><option value="new">Newest</option><option value="old">Oldest</option><option value="shuffle">Shuffle</option></select>
+    </div>
+  </div>
+</header>
+<div class="wrap"><div class="status" id="status">Loading…</div></div>
+<main class="wrap" id="results"></main>
+
+<script>
+"use strict";
+const $ = (s) => document.querySelector(s);
+let W = [], META = {}, FACETS = new Map(), MAXN = 1, shown = 40, lastResults = [];
+
+// Presets for the common "I'm in the mood for…" searches.
+const PRESETS = [
+  ["Hips", "hips"], ["Hamstrings", "hamstrings"], ["Pre-sleep", "sleep"], ["Relax", "relax"],
+  ["Core", "core"], ["Planks", "plank"], ["Standing & lunges", "standing"], ["Chair", "chair"],
+  ["Balance", "balance"], ["Backbends", "backbend"], ["Twists", "twists"], ["Shoulders", "shoulders"],
+  ["Lower back", "lower back"], ["Arm balances", "arm balance"], ["Pigeon", "pigeon"], ["Splits", "splits"],
+  ["Morning", "morning"],
+];
+
+// Extra plain-language aliases on top of the canonical names in workouts.json.
+const EXTRA = {
+  pose: {
+    "Downward-Facing Dog": ["down dog", "downdog", "downward dog", "adho mukha"], "Upward-Facing Dog": ["up dog", "updog"],
+    "Child's Pose": ["child", "childs pose", "childs", "balasana"], "Cat-Cow": ["cat cow", "catcow"],
+    "Savasana": ["corpse", "shavasana"], "Garland": ["malasana", "yogi squat"], "Butterfly": ["bound angle", "baddha konasana"],
+    "Warrior 1": ["warrior one", "warrior i"], "Warrior 2": ["warrior two", "warrior ii"], "Warrior 3": ["warrior three", "warrior iii"],
+    "Plank": ["planks"], "Side Plank": ["side planks"], "Tiger Curls": ["tiger curl", "tiger"], "Splits": ["split", "hanumanasana"],
+    "Half Splits": ["half split"], "Standing Splits": ["standing split"], "Fire Log": ["firelog", "double pigeon"],
+    "Figure Four": ["figure 4"], "Sun Salutation": ["sun salutations", "sun salute", "surya namaskar"],
+    "Wide-Legged Forward Fold": ["wide fold", "wide legged fold", "straddle fold"], "Crow": ["bakasana"],
+    "Seated Twist": ["seated twists"], "Supine Twist": ["reclined twist", "supine twists"], "Forward Fold": ["ragdoll", "rag doll"],
+    "Low Lunge": ["anjaneyasana"], "Bird-Dog": ["bird dog"], "Squat": ["squats"], "90/90": ["90 90"], "45/45": ["45 45"],
+  },
+  body: {
+    "Hips": ["hip", "hip opener", "hip openers"], "Hip Flexors": ["hip flexor", "psoas"], "Hamstrings": ["hamstring", "hammies"],
+    "Quads": ["quad", "quadriceps", "thighs"], "Glutes": ["glute", "butt"], "Inner Thighs": ["inner thigh", "adductors", "groin"],
+    "Outer Hips & IT Band": ["it band", "outer hips", "outer hip"], "Calves & Ankles": ["calves", "calf", "ankles", "ankle"],
+    "Lower Back": ["low back", "lumbar"], "Upper Back": ["upper back"], "Spine": ["spinal"], "Side Body": ["side body", "obliques"],
+    "Core": ["abs", "abdominals"], "Shoulders": ["shoulder"], "Wrists": ["wrist"], "Back": ["back"], "Chest": ["chest", "heart"],
+  },
+  mood: {
+    "Sleep & Wind Down": ["sleep", "bedtime", "bed", "pre sleep", "presleep", "night", "evening", "wind down", "unwind"],
+    "Morning": ["wake up", "am"], "Relax & Restore": ["relax", "restore", "restorative", "calm", "gentle", "stress", "yin"],
+    "Strength": ["strong", "strengthen", "power", "heat"], "Flexibility & Mobility": ["flexibility", "flexible", "mobility", "stretch", "stretching", "stretchy"],
+    "Breathwork": ["breath", "breathing", "pranayama"], "Fundamentals": ["beginner", "beginners", "basics", "fundamentals"],
+    "Peak Pose": ["peak"], "Mindfulness": ["mindful", "meditation", "meditative"], "Balance": [],
+  },
+  type: {
+    "Standing": ["standing", "lunges", "lunge", "lunging"], "Seated": ["seated", "floor"], "Reclined": ["reclined", "lying"],
+    "Inversion": ["inversion", "inversions", "upside down"], "Arm Balance": ["arm balance", "arm balances"],
+    "Standing Balance": ["balance", "balancing", "standing balance"], "Forward Bend": ["forward bend", "forward bends", "folds"],
+    "Backbend": ["backbend", "backbends", "back bend", "back bends", "heart opener"], "Twists": ["twist", "twists", "twisting"],
+    "Hip Opener": ["hip opener", "hip openers"], "Core": ["core"],
+  },
+};
+
+const norm = (s) => s.toLowerCase().replace(/[’']/g, "").replace(/[-/–—,]/g, " ").replace(/\s+/g, " ").trim();
+
+function addFacet(alias, f) {
+  const k = norm(alias);
+  if (!k) return;
+  if (!FACETS.has(k)) FACETS.set(k, []);
+  const list = FACETS.get(k);
+  if (!list.some((x) => x.kind === f.kind && x.value === f.value)) list.push(f);
+}
+
+function buildFacets() {
+  for (const p of Object.keys(META.poses)) addFacet(p, { kind: "pose", value: p });
+  for (const b of META.body) addFacet(b, { kind: "body", value: b });
+  for (const m of META.moods) addFacet(m, { kind: "mood", value: m });
+  for (const [kind, table] of Object.entries(EXTRA))
+    for (const [value, aliases] of Object.entries(table)) for (const a of aliases) addFacet(a, { kind, value });
+  for (const t of Object.keys(EXTRA.type)) addFacet(t, { kind: "type", value: t });
+  // Spreadsheet "notable poses" behave like poses too.
+  const notable = new Set(W.flatMap((w) => w.notable));
+  for (const n of notable) if (!FACETS.has(norm(n))) addFacet(n, { kind: "notable", value: n });
+  const trainers = new Set(W.map((w) => w.trainer));
+  for (const t of trainers) { addFacet(t, { kind: "trainer", value: t }); addFacet(t.split(" ")[0], { kind: "trainer", value: t }); }
+  for (const s of ["Slow", "Energetic"]) addFacet(s, { kind: "style", value: s });
+  addFacet("slow flow", { kind: "style", value: "Slow" });
+  for (const m of new Set(W.map((w) => w.music))) if (m) addFacet(m, { kind: "music", value: m });
+  addFacet("hip hop", { kind: "music", value: "Hip-Hop/R&B" });
+  for (const k of FACETS.keys()) MAXN = Math.max(MAXN, k.split(" ").length);
+}
+
+// Turn the query into terms: known facets (longest phrase wins), durations, and free text.
+function parse(q) {
+  const words = norm(q).split(" ").filter(Boolean), terms = [];
+  for (let i = 0; i < words.length;) {
+    const w = words[i];
+    const dm = w.match(/^(\d+)(?:m|min|mins|minutes?)?$/);
+    if (dm && +dm[1] >= 5 && +dm[1] <= 90 && !FACETS.has(w + " " + (words[i + 1] || ""))) {
+      i += /^(m|min|mins|minutes?)$/.test(words[i + 1] || "") ? 2 : 1;
+      terms.push({ kind: "dur", value: +dm[1], label: dm[1] + " min" }); continue;
+    }
+    let hit = null;
+    for (let n = Math.min(MAXN, words.length - i); n >= 1 && !hit; n--) {
+      const phrase = words.slice(i, i + n).join(" ");
+      if (FACETS.has(phrase)) hit = { phrase, n, facets: FACETS.get(phrase) };
+    }
+    if (hit) { terms.push({ kind: "facet", facets: hit.facets, text: hit.phrase, label: hit.phrase }); i += hit.n; }
+    else if (["and", "with", "a", "the", "for", "yoga", "flow", "pose", "poses", "workout", "focus"].includes(w)) i++;
+    else { terms.push({ kind: "text", text: w, label: `“${w}”` }); i++; }
+  }
+  return terms;
+}
+
+function haystack(w) {
+  return w._hay ??= norm([w.title, w.desc, w.notes, w.themes.join(" "), w.notable.join(" "), Object.keys(w.poses).join(" "),
+    w.artists.join(" "), w.songs.join(" "), w.with.join(" "), w.practice || ""].join(" | "));
+}
+
+// Score one facet against one workout; 0 means no match.
+function facetScore(f, w) {
+  switch (f.kind) {
+    case "pose": {
+      const n = w.poses[f.value] || 0, inDesc = w.dposes.includes(f.value);
+      const inNotable = w.notable.some((x) => norm(x) === norm(f.value));
+      return n || inNotable ? 1 + Math.log2(1 + n) + (inDesc ? 4 : 0) + (inNotable ? 3 : 0) : 0;
+    }
+    case "notable": return w.notable.includes(f.value) ? 6 : 0;
+    case "body": return w.body[f.value] ? 1 + w.body[f.value] : 0;
+    case "mood": return w.moods.includes(f.value) ? 4 + (f.value.startsWith("Sleep") && w.style === "Slow" ? 2 : 0) : 0;
+    case "type": return w.types.includes(f.value) ? 3 : 0;
+    case "trainer": return w.trainer === f.value || w.with.includes(f.value) ? 0.01 : 0;
+    case "style": return w.style === f.value ? 0.01 : 0;
+    case "music": return w.music === f.value ? 0.01 : 0;
+  }
+  return 0;
+}
+
+function score(w, terms) {
+  let total = 0;
+  for (const t of terms) {
+    let s = 0;
+    if (t.kind === "dur") s = Math.abs(w.dur - t.value) <= 2 ? 0.01 : 0;
+    else if (t.kind === "facet") {
+      for (const f of t.facets) s = Math.max(s, facetScore(f, w));
+      if (!s && haystack(w).includes(t.text)) s = 0.5;  // e.g. "balance" mentioned but not tagged
+    } else {
+      const h = haystack(w);
+      s = h.includes(t.text) ? 1 + (norm(w.desc).includes(t.text) ? 2 : 0) : 0;
+    }
+    if (!s) return 0;
+    total += s;
+  }
+  return total || 0.001;
+}
+
+function filters() {
+  return { dur: $("#dur").value, trainer: $("#trainer").value, style: $("#style").value, music: $("#music").value, sort: $("#sort").value };
+}
+
+function run() {
+  const q = $("#q").value, terms = parse(q), f = filters();
+  let res = [];
+  for (const w of W) {
+    if (f.dur && Math.abs(w.dur - +f.dur) > 2) continue;
+    if (f.trainer && w.trainer !== f.trainer) continue;
+    if (f.style && w.style !== f.style) continue;
+    if (f.music && w.music !== f.music) continue;
+    const s = terms.length ? score(w, terms) : 1;
+    if (s) res.push([s, w]);
+  }
+  if (f.sort === "new") res.sort((a, b) => b[1].date.localeCompare(a[1].date));
+  else if (f.sort === "old") res.sort((a, b) => a[1].date.localeCompare(b[1].date));
+  else if (f.sort === "shuffle") res.sort(() => Math.random() - 0.5);
+  else res.sort((a, b) => b[0] - a[0] || b[1].date.localeCompare(a[1].date));
+  lastResults = res.map((r) => r[1]);
+  shown = 40;
+  render(terms);
+  syncHash();
+  for (const b of document.querySelectorAll("#presets button")) b.classList.toggle("on", norm(q).split(" ").join(" ").includes(norm(b.dataset.q)));
+}
+
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function highlight(text, terms) {
+  let out = esc(text);
+  const words = terms.flatMap((t) => (t.kind === "text" ? [t.text] : t.kind === "facet" ? [t.text] : [])).filter((x) => x.length > 2);
+  for (const wd of words) {
+    const rx = new RegExp(`(${wd.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/ /g, "[\\s-]")})`, "ig");
+    out = out.replace(rx, "<mark>$1</mark>");
+  }
+  return out;
+}
+
+function card(w, terms) {
+  const hitVals = new Set(terms.flatMap((t) => (t.facets || []).map((f) => f.value)));
+  const img = w.img ? w.img.replace("{w}", "208").replace("{h}", "116").replace("{c}", "bb").replace("{f}", "jpg") : "";
+  const people = [w.trainer, ...w.with].join(", ");
+  const poseTags = Object.entries(w.poses).sort(([a], [b]) => hitVals.has(b) - hitVals.has(a)).slice(0, 10).map(([p, n]) =>
+    `<span class="tag pose${hitVals.has(p) ? " hit" : ""}">${w.dposes.includes(p) ? "<b>" + esc(p) + "</b>" : esc(p)}${n > 1 ? " ×" + n : ""}</span>`);
+  const notable = w.notable.filter((n) => !w.poses[n]).map((n) => `<span class="tag pose${hitVals.has(n) ? " hit" : ""}"><b>${esc(n)}</b></span>`);
+  const body = Object.keys(w.body).slice(0, 6).map((b) => `<span class="tag body${hitVals.has(b) ? " hit" : ""}">${esc(b)}</span>`);
+  const moods = [...w.moods, ...w.types.filter((t) => !w.body[t])].map((m) => `<span class="tag mood${hitVals.has(m) ? " hit" : ""}">${esc(m)}</span>`);
+  const allPoses = Object.entries(w.poses).map(([p, n]) => `${esc(p)} (${n})`).join(", ");
+  return `<div class="card">
+    <a class="go" href="${esc(w.url)}">
+      ${img ? `<img class="thumb" loading="lazy" src="${esc(img)}" alt="" onerror="this.remove()">` : ""}
+      <div><div class="t">${esc(w.title)}</div>
+      <div class="sub">${w.dur} min · ${esc(w.style)} · ${esc(w.music)}<br>${esc(people)} · Ep ${w.ep ?? "?"} · ${w.date}</div></div>
+    </a>
+    <div class="desc">${highlight(w.desc, terms)}${w.notes ? ` <span class="sub">— ${highlight(w.notes, terms)}</span>` : ""}</div>
+    <div class="tags">${[...body, ...moods, ...notable, ...poseTags].sort((a, b) => b.includes(" hit") - a.includes(" hit")).join("")}</div>
+    <details><summary>All poses &amp; music</summary>
+      <p>${allPoses || "No captions available"}</p>
+      ${w.themes.length ? `<p>Themes: ${esc(w.themes.join(", "))}</p>` : ""}
+      <p>${w.songs.map(esc).join("<br>")}</p></details>
+  </div>`;
+}
+
+function render(terms) {
+  const r = lastResults;
+  const parsed = terms.map((t) => `<span>${esc(t.label)}${t.kind === "facet" ? " · " + esc([...new Set(t.facets.map((f) => f.kind))].join("/")) : ""}</span>`).join("");
+  $("#status").innerHTML = `${r.length} of ${W.length} workouts${parsed ? ` <span class="parsed">${parsed}</span>` : ""}`;
+  $("#results").innerHTML = r.slice(0, shown).map((w) => card(w, terms)).join("") +
+    (r.length > shown ? `<div class="more"><button id="more">Show more (${r.length - shown})</button></div>` : "");
+  const more = $("#more");
+  if (more) more.onclick = () => { shown += 60; render(terms); };
+}
+
+function syncHash() {
+  const p = new URLSearchParams(), f = filters();
+  if ($("#q").value) p.set("q", $("#q").value);
+  for (const [k, v] of Object.entries(f)) if (v && !(k === "sort" && v === "best")) p.set(k, v);
+  history.replaceState(null, "", p.toString() ? "#" + p : location.pathname);
+}
+
+function loadHash() {
+  const p = new URLSearchParams(location.hash.slice(1));
+  $("#q").value = p.get("q") || "";
+  for (const k of ["dur", "trainer", "style", "music", "sort"]) if (p.get(k)) $("#" + k).value = p.get(k);
+}
+
+function pick() {
+  // Weighted toward the best matches, so a vague query still gives something relevant.
+  const pool = lastResults.slice(0, $("#sort").value === "best" && $("#q").value ? 15 : lastResults.length);
+  if (!pool.length) return;
+  const w = pool[Math.floor(Math.random() * pool.length)];
+  lastResults = [w, ...lastResults.filter((x) => x !== w)];
+  shown = 40;
+  render(parse($("#q").value));
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+async function init() {
+  const data = window.WORKOUTS || await (await fetch("workouts.json")).json();
+  W = data.workouts; META = data.meta;
+  buildFacets();
+  for (const t of [...new Set(W.map((w) => w.trainer))].sort((a, b) => W.filter((w) => w.trainer === b).length - W.filter((w) => w.trainer === a).length))
+    $("#trainer").insertAdjacentHTML("beforeend", `<option>${esc(t)}</option>`);
+  for (const m of [...new Set(W.map((w) => w.music))].filter(Boolean).sort())
+    $("#music").insertAdjacentHTML("beforeend", `<option>${esc(m)}</option>`);
+  $("#presets").innerHTML = PRESETS.map(([label, q]) => `<button data-q="${esc(q)}">${esc(label)}</button>`).join("");
+  $("#presets").onclick = (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    const q = norm($("#q").value), add = norm(b.dataset.q);
+    $("#q").value = q.includes(add) ? q.replace(add, "").replace(/\s+/g, " ").trim() : (q + " " + add).trim();
+    run();
+  };
+  loadHash();
+  let timer;
+  $("#q").addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(run, 120); });
+  for (const id of ["dur", "trainer", "style", "music", "sort"]) $("#" + id).addEventListener("change", run);
+  $("#pick").onclick = pick;
+  run();
+  $("#status").title = `Data up to ${META.built}`;
+}
+init().catch((e) => { $("#status").textContent = "Failed to load workouts.json: " + e; });
+</script>
+</body>
+</html>
