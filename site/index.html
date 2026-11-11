@@ -11,12 +11,12 @@
 <style>
   :root {
     --bg: #f5f5f7; --card: #fff; --fg: #1d1d1f; --muted: #6e6e73; --line: #d2d2d7;
-    --accent: #0a84ff; --chip: #ececf0; --hit: #ffe58a; --pose: #e3f1ff; --body: #e9f8e5; --mood: #f6e9ff;
+    --accent: #0a84ff; --chip: #ececf0; --hit: #ffe58a; --pose: #e3f1ff; --body: #e9f8e5; --mood: #f6e9ff; --neg: #ffdcd9;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #000; --card: #1c1c1e; --fg: #f5f5f7; --muted: #98989d; --line: #38383a;
-      --chip: #2c2c2e; --hit: #6b5800; --pose: #0f2a44; --body: #16351a; --mood: #33183f;
+      --chip: #2c2c2e; --hit: #6b5800; --pose: #0f2a44; --body: #16351a; --mood: #33183f; --neg: #4a1c18;
     }
   }
   * { box-sizing: border-box; }
@@ -26,9 +26,18 @@
            backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
            padding: calc(env(safe-area-inset-top) + 10px) 12px 8px; border-bottom: 1px solid var(--line); }
   .wrap { max-width: 900px; margin: 0 auto; }
-  .searchrow { display: flex; gap: 8px; }
-  input[type=search] { flex: 1; font-size: 17px; padding: 10px 12px; border-radius: 12px;
-                       border: 1px solid var(--line); background: var(--card); color: var(--fg); }
+  .searchrow { display: flex; gap: 8px; align-items: flex-start; }
+  .qbox { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 4px 6px;
+          border-radius: 12px; border: 1px solid var(--line); background: var(--card); cursor: text; }
+  .qbox:focus-within { border-color: var(--accent); }
+  #qchips { display: contents; }
+  input[type=search] { flex: 1; min-width: 8em; font-size: 17px; padding: 5px 4px; border: 0; outline: 0;
+                       background: transparent; color: var(--fg); }
+  .qchip { display: inline-flex; align-items: center; font-size: 15px; background: var(--pose); border-radius: 8px;
+           padding: 2px 0 2px 8px; cursor: pointer; white-space: nowrap; }
+  .qchip.sel { background: var(--chip); box-shadow: inset 0 0 0 1px var(--accent); }
+  .qchip.neg { background: var(--neg); } .qchip.neg .ql { text-decoration: line-through; }
+  .qchip button, .act button { padding: 0 7px; background: none; color: var(--muted); border-radius: 6px; }
   button { font: inherit; border: 0; border-radius: 12px; padding: 8px 12px; background: var(--chip);
            color: var(--fg); cursor: pointer; }
   button.primary { background: var(--accent); color: #fff; }
@@ -40,8 +49,11 @@
   .filters::-webkit-scrollbar { display: none; }
   select { font: inherit; font-size: 14px; padding: 5px 6px; flex: none; border-radius: 10px; border: 1px solid var(--line);
            background: var(--card); color: var(--fg); }
+  select.on { background: var(--accent); border-color: var(--accent); color: #fff; }
   .status { color: var(--muted); font-size: 13px; padding: 8px 12px 0; }
-  .parsed span { display: inline-block; background: var(--chip); border-radius: 6px; padding: 0 6px; margin: 2px 2px 0 0; }
+  .act { display: inline-block; background: var(--chip); border-radius: 6px; padding: 0 0 0 6px; margin: 2px 2px 0 0; }
+  .act.neg { background: var(--neg); }
+  #nofilt { font-size: 13px; padding: 1px 8px; border-radius: 6px; background: var(--accent); color: #fff; margin-left: 4px; }
   main { padding: 8px 12px 40px; display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); }
   .card { background: var(--card); border-radius: 16px; overflow: hidden; display: flex; flex-direction: column;
           box-shadow: 0 1px 2px rgba(0,0,0,.06); }
@@ -50,6 +62,7 @@
   .t { font-weight: 600; }
   .sub { color: var(--muted); font-size: 13px; }
   .desc { padding: 0 12px; font-size: 14px; }
+  .songs { padding: 4px 12px 0; font-size: 13px; }
   .tags { padding: 6px 12px 10px; display: flex; flex-wrap: wrap; gap: 4px; }
   .tag { font-size: 12px; border-radius: 6px; padding: 1px 6px; background: var(--chip); }
   .tag.pose { background: var(--pose); } .tag.body { background: var(--body); } .tag.mood { background: var(--mood); }
@@ -66,7 +79,8 @@
 <header>
   <div class="wrap">
     <div class="searchrow">
-      <input id="q" type="search" placeholder="e.g. hips hamstrings slow 20 min" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <div class="qbox" id="qbox"><span id="qchips"></span><input id="q" type="search" enterkeyhint="search"
+        placeholder="hips slow 20 min -triangle" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
       <button id="pick" class="primary" title="Pick one at random from the best matches">🎲</button>
     </div>
     <div class="chips" id="presets"></div>
@@ -85,7 +99,10 @@
 <script>
 "use strict";
 const $ = (s) => document.querySelector(s);
-let W = [], META = {}, FACETS = new Map(), MAXN = 1, shown = 40, lastResults = [];
+let W = [], META = {}, FACETS = new Map(), MAXN = 1, shown = 40, lastResults = [], lastTerms = [], STATUS = [];
+let CHIPS = [];          // committed query terms, except the dropdown-backed ones (the selects hold those)
+const SELTEXT = {};      // what was typed to set a dropdown, so editing its chip gives it back
+const SELS = ["dur", "trainer", "style", "music"];
 
 // Presets for the common "I'm in the mood for…" searches.
 const PRESETS = [
@@ -133,7 +150,22 @@ const EXTRA = {
   },
 };
 
+// Pose groups, matched on the tagged poses only (never the words themselves: captions say "shoulder width" etc.).
+// Mainly for exclusions, e.g. "-wide" in a narrow hotel room.
+const GROUPS = {
+  "Wide Stance": {
+    aliases: ["wide", "wide stance", "wide legged", "side stance", "lateral", "narrow", "narrow room"],
+    poses: ["Triangle", "Revolved Triangle", "Warrior 2", "Reverse Warrior", "Extended Side Angle", "Half Moon",
+            "Revolved Half Moon", "Goddess", "Side Lunge", "Wide-Legged Forward Fold", "Star", "Side Splits", "Gate"],
+  },
+};
+
+const STOP = new Set(["and", "with", "a", "the", "for", "yoga", "flow", "pose", "poses", "workout", "focus"]);
+const NEG = new Set(["no", "not", "without", "skip", "except"]);
+
 const norm = (s) => s.toLowerCase().replace(/[’']/g, "").replace(/[-/–—,]/g, " ").replace(/\s+/g, " ").trim();
+const rxEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const splitArtists = (s) => [s, ...(s.includes(", ") || s.includes(" & ") ? s.split(/, | & /) : [])];
 
 function addFacet(alias, f) {
   const k = norm(alias);
@@ -150,6 +182,7 @@ function buildFacets() {
   for (const [kind, table] of Object.entries(EXTRA))
     for (const [value, aliases] of Object.entries(table)) for (const a of aliases) addFacet(a, { kind, value });
   for (const t of Object.keys(EXTRA.type)) addFacet(t, { kind: "type", value: t });
+  for (const [g, { aliases }] of Object.entries(GROUPS)) for (const a of [g, ...aliases]) addFacet(a, { kind: "group", value: g });
   // Spreadsheet "notable poses" behave like poses too.
   const notable = new Set(W.flatMap((w) => w.notable));
   for (const n of notable) if (!FACETS.has(norm(n))) addFacet(n, { kind: "notable", value: n });
@@ -159,29 +192,130 @@ function buildFacets() {
   addFacet("slow flow", { kind: "style", value: "Slow" });
   for (const m of new Set(W.map((w) => w.music))) if (m) addFacet(m, { kind: "music", value: m });
   addFacet("hip hop", { kind: "music", value: "Hip-Hop/R&B" });
+  // Artists last, and only where the name isn't already something else (so "calm" stays a mood).
+  for (const w of W) {
+    w._art = new Set();
+    for (const a of w.artists.flatMap(splitArtists)) {
+      const k = norm(a);
+      w._art.add(k);
+      if (k.length > 2 && !/^\d+$/.test(k) && !FACETS.get(k)?.some((f) => f.kind !== "artist")) addFacet(a, { kind: "artist", value: k, name: a });
+    }
+  }
   for (const k of FACETS.keys()) MAXN = Math.max(MAXN, k.split(" ").length);
 }
 
-// Turn the query into terms: known facets (longest phrase wins), durations, and free text.
-function parse(q) {
-  const words = norm(q).split(" ").filter(Boolean), terms = [];
-  for (let i = 0; i < words.length;) {
-    const w = words[i];
-    const dm = w.match(/^(\d+)(?:m|min|mins|minutes?)?$/);
-    if (dm && +dm[1] >= 5 && +dm[1] <= 90 && !FACETS.has(w + " " + (words[i + 1] || ""))) {
-      i += /^(m|min|mins|minutes?)$/.test(words[i + 1] || "") ? 2 : 1;
-      terms.push({ kind: "dur", value: +dm[1], label: dm[1] + " min" }); continue;
-    }
-    let hit = null;
-    for (let n = Math.min(MAXN, words.length - i); n >= 1 && !hit; n--) {
-      const phrase = words.slice(i, i + n).join(" ");
-      if (FACETS.has(phrase)) hit = { phrase, n, facets: FACETS.get(phrase) };
-    }
-    if (hit) { terms.push({ kind: "facet", facets: hit.facets, text: hit.phrase, label: hit.phrase }); i += hit.n; }
-    else if (["and", "with", "a", "the", "for", "yoga", "flow", "pose", "poses", "workout", "focus"].includes(w)) i++;
-    else { terms.push({ kind: "text", text: w, label: `“${w}”` }); i++; }
+// Could more typing turn s into a (different) facet? "jonelle " → "jonelle lewis" is the same trainer, so no.
+function isPrefix(s) {
+  const same = FACETS.get(s.trim()), key = (fs) => fs.map((f) => f.kind + ":" + f.value).join("|");
+  for (const k of FACETS.keys()) if (k.startsWith(s) && !(same && k !== s.trim() && key(FACETS.get(k)) === key(same))) return true;
+  return false;
+}
+
+function facetLabel(text, facets) {
+  const vals = [...new Set(facets.map((f) => f.name || f.value))];
+  return vals.length === 1 ? vals[0] : text;
+}
+
+// Turn the query into terms: known facets (longest phrase wins), durations, exclusions ("-x", "no x") and
+// free text. Unless final, stops before anything more typing could change (a half-typed word, "side" before
+// "side plank", "20" before "min") and returns it as rest.
+function parse(q, final = true) {
+  const words = [];
+  for (const tok of q.split(/\s+/).filter(Boolean)) {
+    const neg = /^[-−]./.test(tok);
+    norm(neg ? tok.slice(1) : tok).split(" ").filter(Boolean).forEach((w, j) => words.push({ w, neg: neg && j === 0 }));
   }
-  return terms;
+  const inc = !final && !/\s$/.test(q), terms = [];
+  let i = 0, neg = false, start = 0, stopped = false;
+  while (i < words.length) {
+    if (!neg) start = i;
+    const tail = words.slice(i).map((x) => x.w).join(" ");
+    if (!final && (isPrefix(inc ? tail : tail + " ") || /^\d+$/.test(tail) || (inc && /^\d+ ?[a-z]*$/.test(tail)))) { stopped = true; break; }
+    const w = words[i].w;
+    neg = neg || words[i].neg;
+    let t, n = 1;
+    const dm = w.match(/^(\d+)(?:m|min|mins|minutes?)?$/);
+    if (dm && +dm[1] >= 5 && +dm[1] <= 90 && !FACETS.has(w + " " + (words[i + 1]?.w || ""))) {
+      n = /^(m|min|mins|minutes?)$/.test(words[i + 1]?.w || "") ? 2 : 1;
+      t = { kind: "dur", value: +dm[1], text: dm[1] + " min", label: dm[1] + " min" };
+    } else {
+      let hit = 0;
+      for (let k = Math.min(MAXN, words.length - i); k >= 1 && !hit; k--)
+        if (FACETS.has(words.slice(i, i + k).map((x) => x.w).join(" "))) hit = k;
+      if (hit) {
+        const text = words.slice(i, i + hit).map((x) => x.w).join(" "), facets = FACETS.get(text);
+        t = { kind: "facet", facets, text, label: facetLabel(text, facets) };
+        n = hit;
+      } else if (!neg && NEG.has(w) && i + 1 < words.length) { neg = true; i++; continue; }
+      else if (STOP.has(w) || NEG.has(w)) t = { kind: "stop", text: w };
+      else t = { kind: "text", text: w, label: `“${w}”` };
+    }
+    if (neg && t.kind !== "stop") t.neg = true;
+    terms.push(t);
+    i += n; neg = false;
+  }
+  const rest = stopped ? words.slice(neg ? start : i).map((x) => (x.neg ? "-" : "") + x.w).join(" ") : "";
+  return { terms, rest };
+}
+
+const raw = (t) => (t.neg ? "-" : "") + t.text;
+
+// Dropdown-backed terms (length, trainer, style, music) live in their <select>; returns its id or null.
+function selKind(t) {
+  if (t.neg) return null;
+  if (t.kind === "dur") return "dur";
+  const k = t.kind === "facet" && t.facets.length === 1 && t.facets[0].kind;
+  return ["trainer", "style", "music"].includes(k) ? k : null;
+}
+
+function setSel(k, v) {
+  const s = $("#" + k);
+  v = String(v);
+  if (![...s.options].some((o) => o.value === v))
+    s.add(new Option(v, v), k === "dur" ? [...s.options].find((o) => o.value && +o.value > +v) || null : null);
+  s.value = v;
+}
+
+function addChip(t) {
+  const k = selKind(t);
+  if (k) { setSel(k, k === "dur" ? t.value : t.facets[0].value); SELTEXT[k] = t.text; return; }
+  CHIPS = CHIPS.filter((c) => c.text !== t.text);
+  CHIPS.push(t);
+}
+
+// Move finished, recognised terms out of the text box into chips; unrecognised words stay as text.
+function commit(final) {
+  const q = $("#q"), { terms, rest } = parse(q.value, final);
+  const chips = terms.filter((t) => t.kind !== "text" && t.kind !== "stop");
+  if (!chips.length) return false;
+  chips.forEach(addChip);
+  const left = [...terms.filter((t) => !chips.includes(t)).map(raw), rest].filter(Boolean).join(" ");
+  q.value = left && /\s$/.test(q.value) ? left + " " : left;
+  return true;
+}
+
+const selLabel = (k) => (k === "dur" ? $("#dur").value + " min" : $("#" + k).value);
+
+function chipView() {
+  return [...CHIPS.map((t) => ({ t, label: t.label })),
+          ...SELS.filter((k) => $("#" + k).value).map((k) => ({ sel: k, label: selLabel(k) }))];
+}
+
+// Remove a chip; with edit, put its text back in the box instead.
+function dropChip(c, edit) {
+  let text;
+  if (c.sel) { text = SELTEXT[c.sel] || norm(c.label); $("#" + c.sel).value = ""; SELTEXT[c.sel] = null; }
+  else { text = raw(c.t); CHIPS = CHIPS.filter((x) => x !== c.t); }
+  if (edit) { const q = $("#q"); q.value = (q.value.trimEnd() + " " + text).trim(); q.focus(); }
+  run();
+}
+
+function renderChips() {
+  $("#qchips").innerHTML = chipView().map((c, i) => {
+    const kinds = c.sel || (c.t.facets ? [...new Set(c.t.facets.map((f) => f.kind))].join("/") : c.t.kind === "dur" ? "length" : "text");
+    return `<span class="qchip${c.sel ? " sel" : ""}${c.t?.neg ? " neg" : ""}" data-i="${i}" title="${c.t?.neg ? "excluding " : ""}${esc(kinds)} · tap to edit">` +
+      `<span class="ql">${esc(c.label)}</span><button type="button" class="qx" aria-label="Remove">×</button></span>`;
+  }).join("");
 }
 
 function haystack(w) {
@@ -195,12 +329,14 @@ function facetScore(f, w) {
     case "pose": {
       const n = w.poses[f.value] || 0, inDesc = w.dposes.includes(f.value);
       const inNotable = w.notable.some((x) => norm(x) === norm(f.value));
-      return n || inNotable ? 1 + Math.log2(1 + n) + (inDesc ? 4 : 0) + (inNotable ? 3 : 0) : 0;
+      return n || inDesc || inNotable ? n + (inDesc ? 3 : 0) + (inNotable ? 3 : 0) : 0;
     }
+    case "group": return Math.max(0, ...GROUPS[f.value].poses.map((p) => facetScore({ kind: "pose", value: p }, w)));
     case "notable": return w.notable.includes(f.value) ? 6 : 0;
     case "body": return w.body[f.value] ? 1 + w.body[f.value] : 0;
     case "mood": return w.moods.includes(f.value) ? 4 + (f.value.startsWith("Sleep") && w.style === "Slow" ? 2 : 0) : 0;
     case "type": return w.types.includes(f.value) ? 3 : 0;
+    case "artist": return w._art.has(f.value) ? 1 : 0;
     case "trainer": return w.trainer === f.value || w.with.includes(f.value) ? 0.01 : 0;
     case "style": return w.style === f.value ? 0.01 : 0;
     case "music": return w.music === f.value ? 0.01 : 0;
@@ -208,64 +344,80 @@ function facetScore(f, w) {
   return 0;
 }
 
-function score(w, terms) {
-  let total = 0;
-  for (const t of terms) {
+function termScore(t, w) {
+  if (t.kind === "dur") return Math.abs(w.dur - t.value) <= 2 ? 0.01 : 0;
+  if (t.kind === "facet") {
     let s = 0;
-    if (t.kind === "dur") s = Math.abs(w.dur - t.value) <= 2 ? 0.01 : 0;
-    else if (t.kind === "facet") {
-      for (const f of t.facets) s = Math.max(s, facetScore(f, w));
-      if (!s && haystack(w).includes(t.text)) s = 0.5;  // e.g. "balance" mentioned but not tagged
-    } else {
-      const h = haystack(w);
-      s = h.includes(t.text) ? 1 + (norm(w.desc).includes(t.text) ? 2 : 0) : 0;
-    }
-    if (!s) return 0;
-    total += s;
+    for (const f of t.facets) s = Math.max(s, facetScore(f, w));
+    return s || (haystack(w).includes(t.text) ? 0.5 : 0);  // e.g. "balance" mentioned but not tagged
   }
-  return total || 0.001;
+  return haystack(w).includes(t.text) ? 1 + (norm(w.desc).includes(t.text) ? 2 : 0) : 0;
+}
+
+// Exclusions are strict: any mention at all rules the workout out.
+function excluded(t, w) {
+  if (t.kind === "dur") return Math.abs(w.dur - t.value) <= 2;
+  if (t.kind === "facet" && t.facets.some((f) => facetScore(f, w) > 0)) return true;
+  if (t.facets?.some((f) => f.kind === "group")) return false;
+  return (t._rx ??= new RegExp(`\\b${rxEsc(t.text)}\\b`)).test(haystack(w));
 }
 
 function filters() {
   return { dur: $("#dur").value, trainer: $("#trainer").value, style: $("#style").value, music: $("#music").value, sort: $("#sort").value };
 }
 
-function run() {
-  const q = $("#q").value, terms = parse(q), f = filters();
-  let res = [];
+// Each term's score is scaled by its best score across the matches, so one big count (39 planks) ranks
+// that workout first for "plank" without drowning out the other terms in "plank hips".
+function search(terms, f) {
+  const pos = terms.filter((t) => !t.neg && t.kind !== "stop"), neg = terms.filter((t) => t.neg);
+  const rows = [], max = pos.map(() => 0);
   for (const w of W) {
     if (f.dur && Math.abs(w.dur - +f.dur) > 2) continue;
-    if (f.trainer && w.trainer !== f.trainer) continue;
+    if (f.trainer && w.trainer !== f.trainer && !w.with.includes(f.trainer)) continue;
     if (f.style && w.style !== f.style) continue;
     if (f.music && w.music !== f.music) continue;
-    const s = terms.length ? score(w, terms) : 1;
-    if (s) res.push([s, w]);
+    if (neg.some((t) => excluded(t, w))) continue;
+    const ss = pos.map((t) => termScore(t, w));
+    if (ss.some((s) => !s)) continue;
+    ss.forEach((s, j) => (max[j] = Math.max(max[j], s)));
+    rows.push([ss, w]);
   }
+  const res = rows.map(([ss, w]) => [ss.reduce((a, s, j) => a + s / max[j], 0), w]);
   if (f.sort === "new") res.sort((a, b) => b[1].date.localeCompare(a[1].date));
   else if (f.sort === "old") res.sort((a, b) => a[1].date.localeCompare(b[1].date));
   else if (f.sort === "shuffle") res.sort(() => Math.random() - 0.5);
   else res.sort((a, b) => b[0] - a[0] || b[1].date.localeCompare(a[1].date));
-  lastResults = res.map((r) => r[1]);
+  return res.map((r) => r[1]);
+}
+
+function run() {
+  const f = filters();
+  lastTerms = [...CHIPS, ...parse($("#q").value).terms];
+  lastResults = search(lastTerms, f);
   shown = 40;
-  render(terms);
+  for (const k of [...SELS, "sort"]) $("#" + k).classList.toggle("on", !!f[k] && f[k] !== "best");
+  renderChips();
+  render();
   syncHash();
-  for (const b of document.querySelectorAll("#presets button")) b.classList.toggle("on", norm(q).split(" ").join(" ").includes(norm(b.dataset.q)));
+  for (const b of document.querySelectorAll("#presets button"))
+    b.classList.toggle("on", CHIPS.some((c) => !c.neg && c.text === norm(b.dataset.q)));
 }
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 function highlight(text, terms) {
   let out = esc(text);
-  const words = terms.flatMap((t) => (t.kind === "text" ? [t.text] : t.kind === "facet" ? [t.text] : [])).filter((x) => x.length > 2);
+  const words = terms.filter((t) => t.kind === "text" || t.kind === "facet").map((t) => t.text).filter((x) => x.length > 2);
   for (const wd of words) {
-    const rx = new RegExp(`(${wd.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/ /g, "[\\s-]")})`, "ig");
+    const rx = new RegExp(`(${rxEsc(wd).replace(/ /g, "[\\s-]")})`, "ig");
     out = out.replace(rx, "<mark>$1</mark>");
   }
   return out;
 }
 
 function card(w, terms) {
-  const hitVals = new Set(terms.flatMap((t) => (t.facets || []).map((f) => f.value)));
+  terms = terms.filter((t) => !t.neg && t.kind !== "stop");
+  const hitVals = new Set(terms.flatMap((t) => (t.facets || []).flatMap((f) => (f.kind === "group" ? GROUPS[f.value].poses : [f.value]))));
   const img = w.img ? w.img.replace("{w}", "208").replace("{h}", "116").replace("{c}", "bb").replace("{f}", "jpg") : "";
   const people = [w.trainer, ...w.with].join(", ");
   const poseTags = Object.entries(w.poses).sort(([a], [b]) => hitVals.has(b) - hitVals.has(a)).slice(0, 10).map(([p, n]) =>
@@ -274,6 +426,9 @@ function card(w, terms) {
   const body = Object.keys(w.body).slice(0, 6).map((b) => `<span class="tag body${hitVals.has(b) ? " hit" : ""}">${esc(b)}</span>`);
   const moods = [...w.moods, ...w.types.filter((t) => !w.body[t])].map((m) => `<span class="tag mood${hitVals.has(m) ? " hit" : ""}">${esc(m)}</span>`);
   const allPoses = Object.entries(w.poses).map(([p, n]) => `${esc(p)} (${n})`).join(", ");
+  // Songs that matched a song/artist search, shown up front so it's clear why the workout is here.
+  const songWords = terms.filter((t) => t.kind === "text" || t.facets?.some((f) => f.kind === "artist")).map((t) => t.text);
+  const songs = songWords.length ? w.songs.filter((s) => songWords.some((x) => norm(s).includes(x))).slice(0, 3) : [];
   return `<div class="card">
     <a class="go" href="${esc(w.url)}">
       ${img ? `<img class="thumb" loading="lazy" src="${esc(img)}" alt="" onerror="this.remove()">` : ""}
@@ -281,6 +436,7 @@ function card(w, terms) {
       <div class="sub">${w.dur} min · ${esc(w.style)} · ${esc(w.music)}<br>${esc(people)} · Ep ${w.ep ?? "?"} · ${w.date}</div></div>
     </a>
     <div class="desc">${highlight(w.desc, terms)}${w.notes ? ` <span class="sub">— ${highlight(w.notes, terms)}</span>` : ""}</div>
+    ${songs.length ? `<div class="songs">${songs.map((s) => "♪ " + highlight(s, terms)).join("<br>")}</div>` : ""}
     <div class="tags">${[...body, ...moods, ...notable, ...poseTags].sort((a, b) => b.includes(" hit") - a.includes(" hit")).join("")}</div>
     <details><summary>All poses &amp; music</summary>
       <p>${allPoses || "No captions available"}</p>
@@ -289,37 +445,57 @@ function card(w, terms) {
   </div>`;
 }
 
-function render(terms) {
-  const r = lastResults;
-  const parsed = terms.map((t) => `<span>${esc(t.label)}${t.kind === "facet" ? " · " + esc([...new Set(t.facets.map((f) => f.kind))].join("/")) : ""}</span>`).join("");
-  $("#status").innerHTML = `${r.length} of ${W.length} workouts${parsed ? ` <span class="parsed">${parsed}</span>` : ""}`;
-  $("#results").innerHTML = r.slice(0, shown).map((w) => card(w, terms)).join("") +
+// Drop a not-yet-chipped term's words from the text box.
+function dropWords(t) {
+  const q = $("#q"), ws = t.text.split(" ");
+  q.value = q.value.split(/\s+/).filter((tok) => !ws.includes(norm(tok.replace(/^[-−]/, "")))).join(" ");
+  run();
+}
+
+// The status line lists everything that is narrowing the results, so a forgotten filter is obvious.
+function render() {
+  const r = lastResults, f = filters(), sort = $("#sort");
+  STATUS = [
+    ...chipView().map((c) => ({ label: c.label, neg: c.t?.neg, rm: () => dropChip(c, false) })),
+    ...parse($("#q").value).terms.filter((t) => t.kind !== "stop").map((t) => ({ label: t.label, neg: t.neg, rm: () => dropWords(t) })),
+    ...(f.sort !== "best" ? [{ label: sort.options[sort.selectedIndex].text, rm: () => { sort.value = "best"; run(); } }] : []),
+  ];
+  const acts = STATUS.map((s, i) => `<span class="act${s.neg ? " neg" : ""}">${s.neg ? "not " : ""}${esc(s.label)}<button data-s="${i}" aria-label="Remove">×</button></span>`).join("");
+  let unfiltered = 0;
+  if (!r.length && SELS.some((k) => f[k])) unfiltered = search(lastTerms, {}).length;
+  $("#status").innerHTML = `${r.length} of ${W.length} workouts ${acts}` +
+    (unfiltered ? `<button id="nofilt">${unfiltered} without ${SELS.filter((k) => f[k]).map(selLabel).map(esc).join(", ")}</button>` : "");
+  $("#results").innerHTML = r.slice(0, shown).map((w) => card(w, lastTerms)).join("") +
     (r.length > shown ? `<div class="more"><button id="more">Show more (${r.length - shown})</button></div>` : "");
   const more = $("#more");
-  if (more) more.onclick = () => { shown += 60; render(terms); };
+  if (more) more.onclick = () => { shown += 60; render(); };
 }
 
 function syncHash() {
   const p = new URLSearchParams(), f = filters();
-  if ($("#q").value) p.set("q", $("#q").value);
+  const q = [...CHIPS.map(raw), $("#q").value.trim()].filter(Boolean).join(" ");
+  if (q) p.set("q", q);
   for (const [k, v] of Object.entries(f)) if (v && !(k === "sort" && v === "best")) p.set(k, v);
   history.replaceState(null, "", p.toString() ? "#" + p : location.pathname);
 }
 
 function loadHash() {
   const p = new URLSearchParams(location.hash.slice(1));
+  for (const k of SELS) if (p.get(k)) setSel(k, p.get(k));
+  if (p.get("sort")) $("#sort").value = p.get("sort");
+  CHIPS = [];
   $("#q").value = p.get("q") || "";
-  for (const k of ["dur", "trainer", "style", "music", "sort"]) if (p.get(k)) $("#" + k).value = p.get(k);
+  commit(true);
 }
 
 function pick() {
   // Weighted toward the best matches, so a vague query still gives something relevant.
-  const pool = lastResults.slice(0, $("#sort").value === "best" && $("#q").value ? 15 : lastResults.length);
+  const pool = lastResults.slice(0, $("#sort").value === "best" && lastTerms.length ? 15 : lastResults.length);
   if (!pool.length) return;
   const w = pool[Math.floor(Math.random() * pool.length)];
   lastResults = [w, ...lastResults.filter((x) => x !== w)];
   shown = 40;
-  render(parse($("#q").value));
+  render();
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -334,14 +510,39 @@ async function init() {
   $("#presets").innerHTML = PRESETS.map(([label, q]) => `<button data-q="${esc(q)}">${esc(label)}</button>`).join("");
   $("#presets").onclick = (e) => {
     const b = e.target.closest("button"); if (!b) return;
-    const q = norm($("#q").value), add = norm(b.dataset.q);
-    $("#q").value = q.includes(add) ? q.replace(add, "").replace(/\s+/g, " ").trim() : (q + " " + add).trim();
+    const key = norm(b.dataset.q);
+    if (CHIPS.some((c) => !c.neg && c.text === key)) CHIPS = CHIPS.filter((c) => c.text !== key);
+    else parse(b.dataset.q).terms.filter((t) => t.kind !== "stop").forEach(addChip);
     run();
   };
+  $("#qchips").onclick = (e) => {
+    const el = e.target.closest(".qchip"); if (!el) return;
+    dropChip(chipView()[+el.dataset.i], !e.target.closest(".qx"));
+  };
+  $("#qbox").onclick = (e) => { if (e.target.id === "qbox") $("#q").focus(); };
+  $("#status").onclick = (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    if (b.id === "nofilt") { for (const k of SELS) $("#" + k).value = ""; run(); }
+    else if (b.dataset.s) STATUS[+b.dataset.s].rm();
+  };
   loadHash();
-  let timer;
-  $("#q").addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(run, 120); });
-  for (const id of ["dur", "trainer", "style", "music", "sort"]) $("#" + id).addEventListener("change", run);
+  const q = $("#q");
+  let timer, idle;
+  q.addEventListener("input", () => {
+    commit(false);
+    clearTimeout(timer); timer = setTimeout(run, 120);
+    // A pause after a space settles "20 " or "jonelle " without waiting for the next word.
+    clearTimeout(idle);
+    if (/\s$/.test(q.value)) idle = setTimeout(() => { commit(true); run(); }, 1000);
+  });
+  q.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { commit(true); run(); }
+    else if (e.key === "Backspace" && !q.value) { const v = chipView(); if (v.length) { e.preventDefault(); dropChip(v.at(-1), true); } }
+  });
+  // Deferred so a tap on a chip or status button lands before the re-render; skipped if that tap refocused the box.
+  q.addEventListener("blur", () => setTimeout(() => { if (document.activeElement !== q && commit(true)) run(); }, 150));
+  for (const id of SELS) $("#" + id).addEventListener("change", () => { SELTEXT[id] = null; run(); });
+  $("#sort").addEventListener("change", run);
   $("#pick").onclick = pick;
   run();
   $("#status").title = `Data up to ${META.built}`;
