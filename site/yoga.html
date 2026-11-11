@@ -100,7 +100,7 @@
 <script>
 "use strict";
 const $ = (s) => document.querySelector(s);
-let W = [], META = {}, FACETS = new Map(), MAXN = 1, shown = 40, lastResults = [], lastTerms = [], STATUS = [];
+let W = [], META = {}, FACETS = new Map(), CATW = {}, CMAX = {}, BMAX = {}, MAXN = 1, shown = 40, lastResults = [], lastTerms = [], STATUS = [];
 let CHIPS = [];          // committed query terms, except the dropdown-backed ones (the selects hold those)
 const SELTEXT = {};      // what was typed to set a dropdown, so editing its chip gives it back
 const SELS = ["dur", "trainer", "style", "music"];
@@ -203,6 +203,38 @@ function buildFacets() {
     }
   }
   for (const k of FACETS.keys()) MAXN = Math.max(MAXN, k.split(" ").length);
+}
+
+// Pose categories (Core, Twists…) score by the poses in them, each weighted by its rarity (corpus mentions per
+// minute), so 19 boats count for more than 6 planks: plank and chaturanga are cued in every vinyasa.
+function buildCategories() {
+  const cap = W.filter((w) => w.captioned), rate = {};
+  for (const [p, { types }] of Object.entries(META.poses)) {
+    if (!types.length) continue;
+    rate[p] = Math.max(cap.reduce((a, w) => a + (w.poses[p] || 0) / w.dur, 0) / cap.length, 0.01);
+    for (const c of types) (CATW[c] ??= []).push([p, rate[p]]);
+  }
+  for (const list of Object.values(CATW)) {
+    const avg = list.reduce((a, [, r]) => a + r, 0) / list.length;
+    for (const x of list) x[1] = avg / x[1];
+  }
+  for (const w of W) {
+    for (const c of Object.keys(CATW)) CMAX[c] = Math.max(CMAX[c] || 0, catScore(c, w));
+    for (const [b, v] of Object.entries(w.body)) BMAX[b] = Math.max(BMAX[b] || 0, v);
+  }
+}
+
+function catScore(c, w) {
+  let s = 0;
+  for (const [p, k] of CATW[c] || []) s += (w.poses[p] || 0) * k;
+  return s;
+}
+
+// A body area or pose type: how much it's talked about (body score), how much of its poses there are, and
+// whether it's tagged as a type. Each part is scaled by its corpus max, so none drowns out the others.
+function focus(name, w) {
+  return (w.body[name] || 0) / (BMAX[name] || 1) + (CMAX[name] ? catScore(name, w) / CMAX[name] : 0) +
+    (w.types.includes(name) ? 0.25 : 0);
 }
 
 // Could more typing turn s into a (different) facet? "jonelle " → "jonelle lewis" is the same trainer, so no.
@@ -334,9 +366,9 @@ function facetScore(f, w) {
     }
     case "group": return Math.max(0, ...GROUPS[f.value].poses.map((p) => facetScore({ kind: "pose", value: p }, w)));
     case "notable": return w.notable.includes(f.value) ? 6 : 0;
-    case "body": return w.body[f.value] ? 1 + w.body[f.value] : 0;
+    case "body": return w.body[f.value] ? focus(f.value, w) : 0;
     case "mood": return w.moods.includes(f.value) ? 4 + (f.value.startsWith("Sleep") && w.style === "Slow" ? 2 : 0) : 0;
-    case "type": return w.types.includes(f.value) ? 3 : 0;
+    case "type": return w.types.includes(f.value) ? focus(f.value, w) : 0;
     case "artist": return w._art.has(f.value) ? 1 : 0;
     case "trainer": return w.trainer === f.value || w.with.includes(f.value) ? 0.01 : 0;
     case "style": return w.style === f.value ? 0.01 : 0;
@@ -350,7 +382,7 @@ function termScore(t, w) {
   if (t.kind === "facet") {
     let s = 0;
     for (const f of t.facets) s = Math.max(s, facetScore(f, w));
-    return s || (haystack(w).includes(t.text) ? 0.5 : 0);  // e.g. "balance" mentioned but not tagged
+    return s || (haystack(w).includes(t.text) ? 0.05 : 0);  // e.g. "balance" mentioned but not tagged
   }
   return haystack(w).includes(t.text) ? 1 + (norm(w.desc).includes(t.text) ? 2 : 0) : 0;
 }
@@ -418,7 +450,8 @@ function highlight(text, terms) {
 
 function card(w, terms) {
   terms = terms.filter((t) => !t.neg && t.kind !== "stop");
-  const hitVals = new Set(terms.flatMap((t) => (t.facets || []).flatMap((f) => (f.kind === "group" ? GROUPS[f.value].poses : [f.value]))));
+  const hitVals = new Set(terms.flatMap((t) => (t.facets || []).flatMap((f) =>
+    f.kind === "group" ? GROUPS[f.value].poses : [f.value, ...(CATW[f.value] && /body|type/.test(f.kind) ? CATW[f.value].map(([p]) => p) : [])])));
   const img = w.img ? w.img.replace("{w}", "208").replace("{h}", "116").replace("{c}", "bb").replace("{f}", "jpg") : "";
   const people = [w.trainer, ...w.with].join(", ");
   const poseTags = Object.entries(w.poses).sort(([a], [b]) => hitVals.has(b) - hitVals.has(a)).slice(0, 10).map(([p, n]) =>
@@ -466,10 +499,31 @@ function render() {
   if (!r.length && SELS.some((k) => f[k])) unfiltered = search(lastTerms, {}).length;
   $("#status").innerHTML = `${r.length} of ${W.length} workouts ${acts}` +
     (unfiltered ? `<button id="nofilt">${unfiltered} without ${SELS.filter((k) => f[k]).map(selLabel).map(esc).join(", ")}</button>` : "");
-  $("#results").innerHTML = r.slice(0, shown).map((w) => card(w, lastTerms)).join("") +
-    (r.length > shown ? `<div class="more"><button id="more">Show more (${r.length - shown})</button></div>` : "");
-  const more = $("#more");
-  if (more) more.onclick = () => { shown += 60; render(); };
+  const els = r.slice(0, shown).map((w) => cardEl(w, lastTerms));
+  if (r.length > shown) {
+    const more = document.createElement("div");
+    more.className = "more";
+    more.innerHTML = `<button>Show more (${r.length - shown})</button>`;
+    more.onclick = () => { shown += 60; render(); };
+    els.push(more);
+  }
+  $("#results").replaceChildren(...els);
+  for (const [id, c] of CARDS) if (!c.el.isConnected) CARDS.delete(id);
+}
+
+// Rebuilding every card on each keystroke made the list (and the thumbnails, which reload) flicker. Cards
+// whose markup hasn't changed are reused as is; changed ones keep their already-loaded thumbnail.
+const CARDS = new Map();
+function cardEl(w, terms) {
+  const html = card(w, terms), old = CARDS.get(w.id);
+  if (old?.html === html) return old.el;
+  const t = document.createElement("template");
+  t.innerHTML = html;
+  const el = t.content.firstElementChild, img = el.querySelector(".thumb"), oldImg = old?.el.querySelector(".thumb");
+  if (img && oldImg) img.replaceWith(oldImg);
+  if (old?.el.querySelector("details")?.open) el.querySelector("details").open = true;
+  CARDS.set(w.id, { html, el });
+  return el;
 }
 
 function syncHash() {
@@ -504,6 +558,7 @@ async function init() {
   const data = window.WORKOUTS || await (await fetch("workouts.json")).json();
   W = data.workouts; META = data.meta;
   buildFacets();
+  buildCategories();
   for (const t of [...new Set(W.map((w) => w.trainer))].sort((a, b) => W.filter((w) => w.trainer === b).length - W.filter((w) => w.trainer === a).length))
     $("#trainer").insertAdjacentHTML("beforeend", `<option>${esc(t)}</option>`);
   for (const m of [...new Set(W.map((w) => w.music))].filter(Boolean).sort())
@@ -530,7 +585,7 @@ async function init() {
   const q = $("#q");
   let timer, idle;
   q.addEventListener("input", () => {
-    commit(false);
+    if (commit(false)) renderChips();  // now, so the words don't vanish from the box before their chip shows
     clearTimeout(timer); timer = setTimeout(run, 120);
     // A pause after a space settles "20 " or "jonelle " without waiting for the next word.
     clearTimeout(idle);
