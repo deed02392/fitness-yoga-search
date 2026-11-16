@@ -19,9 +19,9 @@ python3 scripts/captions.py [workers]      # fetches only workouts missing from 
 python3 scripts/build.py                   # always rebuilds site/ and data/yoga_filled.csv
 ```
 
-`data/catalog.tsv` (tab-separated `id, modality, release date, title`) is the input to everything and
-must be refreshed first when new workouts are released (Mondays). How it's produced is deliberately not
-documented in this repo (see the "Public repo" note below).
+`data/catalog.tsv` lists the workouts and is the input to everything: one per line, as a Fitness app share link
+(`fitness.apple.com/workout/<slug>/<id>`) or a bare ID, optionally followed by a tab and the workout type so other
+types are skipped without fetching. Add new workouts to it first when they're released (Mondays).
 
 Pushing to `main` redeploys Pages via `.github/workflows/pages.yml`, but only when `site/**` changes.
 
@@ -30,7 +30,8 @@ Pushing to `main` redeploys Pages via `.github/workflows/pages.yml`, but only wh
 - **`scripts/scrape.py`**: batch-fetches (50 IDs/request) from `amp-api.fitness.apple.com/v1/catalog/us/workouts`
   using the anonymous bearer token scraped from the `web-experience-app/config/environment` meta tag on any
   fitness.apple.com workout page. Related resources (`included`) are inlined into each `data/api/<id>.json`.
-  The API can't list workouts by modality, which is why IDs come from `catalog.tsv`.
+  The API can't list workouts, which is why IDs come from `catalog.tsv`. Workouts of other types are not saved.
+  Titles come from the API too (`attributes.name`).
 - **`scripts/captions.py`**: `offers[0].hlsUrl` → HLS master playlist → English `SUBTITLES` rendition → WebVTT
   segments (public, unencrypted). Cue line breaks are `\r`. Saves `data/captions/<id>.txt` as `mm:ss\ttext`,
   only after a workout fully succeeds (safe to kill/restart). Requests have ~0.7s latency, so segments are
@@ -82,6 +83,6 @@ Pushing to `main` redeploys Pages via `.github/workflows/pages.yml`, but only wh
 
 ## Public repo
 
-Nothing committed may reveal how `catalog.tsv` is obtained.
-Before committing, check the staged (i.e. published) blobs for internal app/DB names, device paths and hostnames,
-and that every `filter=age` file is actually encrypted (see `CLAUDE.local.md` for the exact commands).
+Public docs say workout IDs come from the Fitness app's share links; nothing committed may say anything more
+about how `catalog.tsv` is obtained. Before committing, check the staged (i.e. published) blobs for internal
+app/DB names, device paths and hostnames, and that every `filter=age` file is actually encrypted (see `CLAUDE.local.md` for the exact commands).

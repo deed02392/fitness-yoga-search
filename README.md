@@ -11,7 +11,7 @@ Search examples: `hips hamstrings 20`, `sleep`, `core plank jessica`, `pigeon sl
 
 | Step | Script | Source |
 | --- | --- | --- |
-| 1. Workout IDs | — | `data/catalog.tsv`: one line per workout (`id`, `modality`, `release date`, `title`, tab-separated). The website has no way to list workouts, so the IDs have to come from elsewhere; that isn't covered here |
+| 1. Workout IDs | — | `data/catalog.tsv`: one workout per line, as its share link (Share → Copy in the Fitness app gives `fitness.apple.com/workout/<slug>/<id>`) or just the ID. The API has no way to list workouts, so the IDs come from the share links |
 | 2. Metadata | `scripts/scrape.py` | Public catalog API used by fitness.apple.com (`amp-api.fitness.apple.com`, anonymous web token taken from the page): description, trainer, episode, length, skill level, music genre, songs |
 | 3. Captions | `scripts/captions.py` | English WebVTT subtitles from each workout's public HLS playlist, so every pose the trainer cues is searchable, not just the 3–5 in the description |
 | 4. Build | `scripts/build.py` | Merges the above with the community spreadsheet (`Weekly Workouts.dtable`, matched on link / date+trainer+episode) and tags poses, pose types, body focus and moods using `scripts/vocab.py` |
@@ -27,7 +27,7 @@ The ID list, raw captions and API responses stay in `data/` (git-ignored). Only 
 ## Refreshing (weekly, after new workouts drop on Mondays)
 
 ```sh
-# refresh data/catalog.tsv with the new IDs first
+# add the new workouts' share links to data/catalog.tsv first
 python3 scripts/scrape.py          # only fetches new IDs
 python3 scripts/captions.py        # only fetches new captions
 python3 scripts/build.py

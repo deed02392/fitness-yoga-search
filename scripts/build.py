@@ -49,12 +49,6 @@ def load_sheet():
     return rows
 
 
-def catalog_titles():
-    """Display titles (which include e.g. "• Music by …") from data/catalog.tsv."""
-    rows = [line.split("\t") for line in (DATA / "catalog.tsv").read_text().splitlines() if line]
-    return {r[0]: r[3] for r in rows if len(r) > 3}
-
-
 def load_captions(wid):
     p = DATA / "captions" / f"{wid}.txt"
     if not p.exists():
@@ -91,7 +85,6 @@ def write_csv(out):
 
 
 def main():
-    titles = catalog_titles()
     sheet = load_sheet()
     workouts = [json.loads(p.read_text()) for p in sorted((DATA / "api").glob("*.json"))]
 
@@ -192,7 +185,7 @@ def main():
 
         songs = [s.get("attributes", {}) for s in w["relationships"].get("songs", {}).get("data", [])]
         genres = [g.get("attributes", {}).get("name") for g in w["relationships"]["genres"]["data"]]
-        title = titles.get(w["id"]) or a["name"]
+        title = a["name"]
         out.append({
             "id": w["id"],
             "url": a["url"].replace("fitness.apple.com/us/", "fitness.apple.com/"),

@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """Fetch full workout metadata from the public Fitness+ catalog API.
 
-Workout IDs come from data/catalog.tsv (see README); details come from
+Workout IDs come from data/catalog.tsv: one workout per line, either its
+share link from the Fitness app (fitness.apple.com/workout/<slug>/<id>) or
+just the ID, optionally followed by a tab and the workout type (Yoga, HIIT…)
+so other types are skipped without fetching. Details come from
 amp-api.fitness.apple.com using the anonymous web token that
-fitness.apple.com embeds in its pages. Results are cached in data/api/ so
-re-runs only fetch new workouts.
+fitness.apple.com embeds in its pages. Only workouts of the requested types
+are saved, to data/api/, so re-runs only fetch new ones.
 
 usage: scrape.py [modality-name ...]   (default: Yoga)
 """
@@ -35,9 +38,18 @@ def get_token():
 
 
 def catalog_ids(modalities):
-    """IDs from data/catalog.tsv: id, modality, release date, title (tab-separated)."""
-    rows = [line.split("\t") for line in (DATA / "catalog.tsv").read_text().splitlines() if line]
-    return [r[0] for r in sorted(rows, key=lambda r: r[2]) if r[1] in modalities]
+    """Workout IDs from data/catalog.tsv (the first long number on each line), in file order."""
+    ids = []
+    for line in (DATA / "catalog.tsv").read_text().splitlines():
+        cols = line.split("\t")
+        m = re.search(r"\b(\d{9,})\b", cols[0])
+        if m and m.group(1) not in ids and (len(cols) < 2 or cols[1] in modalities):
+            ids.append(m.group(1))
+    return ids
+
+
+def modality(w):
+    return next((m.get("attributes", {}).get("name") for m in w["relationships"].get("modalities", {}).get("data", [])), None)
 
 
 def fetch(ids, token):
@@ -58,7 +70,7 @@ def main():
     CACHE.mkdir(parents=True, exist_ok=True)
     ids = catalog_ids(modalities)
     todo = [i for i in ids if not (CACHE / f"{i}.json").exists()]
-    print(f"{len(ids)} workouts in catalog, {len(todo)} to fetch")
+    print(f"{len(ids)} workouts listed, {len(todo)} not fetched yet")
     if not todo:
         return
     token = get_token()
@@ -66,13 +78,18 @@ def main():
         chunk = todo[n:n + BATCH]
         resp = fetch(chunk, token)
         included = {(x["type"], x["id"]): x for x in resp.get("included", [])}
+        other = 0
         for w in resp.get("data", []):
             # Inline related resources so each cached file is self-contained.
             for rel in w.get("relationships", {}).values():
                 rel["data"] = [included.get((d["type"], d["id"]), d) for d in rel.get("data", [])]
+            if modality(w) not in modalities:  # e.g. a non-yoga link in the list
+                other += 1
+                continue
             (CACHE / f"{w['id']}.json").write_text(json.dumps(w))
         missing = set(chunk) - {w["id"] for w in resp.get("data", [])}
-        print(f"  {n + len(chunk)}/{len(todo)}" + (f"  (not in US catalog: {len(missing)})" if missing else ""))
+        print(f"  {n + len(chunk)}/{len(todo)}" + (f"  (not in US catalog: {len(missing)})" if missing else "")
+              + (f"  (other workout types skipped: {other})" if other else ""))
         time.sleep(1)
 
 
